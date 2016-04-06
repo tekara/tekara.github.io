@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js - pointerlock controls</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			html, body {
+				width: 100%;
+				height: 100%;
+			}
+
+			body {
+				background-color: #ffffff;
+				margin: 0;
+				overflow: hidden;
+				font-family: arial;
+			}
+
+			#blocker {
+
+				position: absolute;
+
+				width: 100%;
+				height: 100%;
+
+				background-color: rgba(0,0,0,0.5);
+
+			}
+
+			#instructions {
+
+				width: 100%;
+				height: 100%;
+
+				display: -webkit-box;
+				display: -moz-box;
+				display: box;
+
+				-webkit-box-orient: horizontal;
+				-moz-box-orient: horizontal;
+				box-orient: horizontal;
+
+				-webkit-box-pack: center;
+				-moz-box-pack: center;
+				box-pack: center;
+
+				-webkit-box-align: center;
+				-moz-box-align: center;
+				box-align: center;
+
+				color: #ffffff;
+				text-align: center;
+
+				cursor: pointer;
+
+			}
+
+		</style>
+	</head>
+	<body>
+		<script src="three.js/build/three.min.js"></script>
+		<script src="three.js/src/core/Raycaster.js"></script>
+		<script src="three.js/examples/js/renderers/Projector.js"></script>
+		<script src="three.js/examples/js/controls/PointerLockControls.js"></script>
+
+		<div id="blocker">
+
+			<div id="instructions">
+				<span style="font-size:40px">Click to play</span>
+				<br />
+				(W, A, S, D = Move, E = ACTION, SHIFT = Run SPACE = Jump, MOUSE = Look around)
+			</div>
+
+		</div>
+
+		<script>
+
+			var camera, scene, renderer;
+			var geometry, material, mesh;
+			var controls;
+
+			var objects = [];
+			var interactiveObj = [];
+			var backpack = [];
+			var selectedObj;
+			var highlighted;
+
+			var raycaster;
+			var collisionRaycaster;
+			var fCollisionCaster;
+			var bCollisionCaster;
+			var lCollisionCaster;
+			var rCollisionCaster;
+
+			var projector;
+			var mouse;
+
+			var blocker = document.getElementById( 'blocker' );
+			var instructions = document.getElementById( 'instructions' );
+
+			var havePointerLock = 'pointerLockElement' in document || 'mozPointerLockElement' in document || 'webkitPointerLockElement' in document;
+
+			//Lock the mouse so that it doesn't show
+			if ( havePointerLock ) {
+
+				var element = document.body;
+
+				var pointerlockchange = function ( event ) {
+
+					if ( document.pointerLockElement === element || document.mozPointerLockElement === element || document.webkitPointerLockElement === element ) {
+
+						controlsEnabled = true;
+						controls.enabled = true;
+
+						blocker.style.display = 'none';
+
+					} else {
+
+						controls.enabled = false;
+
+						blocker.style.display = '-webkit-box';
+						blocker.style.display = '-moz-box';
+						blocker.style.display = 'box';
+
+						instructions.style.display = '';
+
+					}
+
+				};
+
+				var pointerlockerror = function ( event ) {
+
+					instructions.style.display = '';
+
+				};
+
+				// Hook pointer lock state change events
+				document.addEventListener( 'pointerlockchange', pointerlockchange, false );
+				document.addEventListener( 'mozpointerlockchange', pointerlockchange, false );
+				document.addEventListener( 'webkitpointerlockchange', pointerlockchange, false );
+
+				document.addEventListener( 'pointerlockerror', pointerlockerror, false );
+				document.addEventListener( 'mozpointerlockerror', pointerlockerror, false );
+				document.addEventListener( 'webkitpointerlockerror', pointerlockerror, false );
+
+				instructions.addEventListener( 'click', function ( event ) {
+
+					instructions.style.display = 'none';
+
+					// Ask the browser to lock the pointer
+					element.requestPointerLock = element.requestPointerLock || element.mozRequestPointerLock || element.webkitRequestPointerLock;
+
+					if ( /Firefox/i.test( navigator.userAgent ) ) {
+
+						var fullscreenchange = function ( event ) {
+
+							if ( document.fullscreenElement === element || document.mozFullscreenElement === element || document.mozFullScreenElement === element ) {
+
+								document.removeEventListener( 'fullscreenchange', fullscreenchange );
+								document.removeEventListener( 'mozfullscreenchange', fullscreenchange );
+
+								element.requestPointerLock();
+							}
+
+						};
+
+						document.addEventListener( 'fullscreenchange', fullscreenchange, false );
+						document.addEventListener( 'mozfullscreenchange', fullscreenchange, false );
+
+						element.requestFullscreen = element.requestFullscreen || element.mozRequestFullscreen || element.mozRequestFullScreen || element.webkitRequestFullscreen;
+
+						element.requestFullscreen();
+
+					} else {
+
+						element.requestPointerLock();
+
+					}
+
+				}, false );
+
+			} else {
+
+				instructions.innerHTML = 'Your browser doesn\'t seem to support Pointer Lock API';
+
+			}
+
+			init();
+			animate();
+
+			var controlsEnabled = false;
+
+			var moveForward = false;
+			var moveBackward = false;
+			var moveLeft = false;
+			var moveRight = false;
+			var canJump = false;
+			var pickup = false;
+			var run = false;
+
+			var prevTime = performance.now();
+			var velocity = new THREE.Vector3();
+
+			function init() {
+
+				camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 1000 );
+
+				scene = new THREE.Scene();
+				scene.fog = new THREE.Fog( 0xffffff, 0, 750 );
+
+				var light = new THREE.HemisphereLight( 0xeeeeff, 0x777788, 0.75 );
+				light.position.set( 0.5, 1, 0.75 );
+				scene.add( light );
+
+				controls = new THREE.PointerLockControls( camera );
+				scene.add( controls.getObject() );
+
+				//Check for buttons pressed to start movement
+				var onKeyDown = function ( event ) {
+
+					switch ( event.keyCode ) {
+
+						case 38: // up
+						case 87: // w
+							moveForward = true;
+							break;
+
+						case 37: // left
+						case 65: // a
+							moveLeft = true; break;
+
+						case 40: // down
+						case 83: // s
+							moveBackward = true;
+							break;
+
+						case 39: // right
+						case 68: // d
+							moveRight = true;
+							break;
+
+						case 32: // space
+							if ( canJump === true ) velocity.y += 350;
+							canJump = false;
+							break;
+						case 69: // e
+							pickup = true;
+							break;
+						case 16: //shift
+							run = true;
+							break;
+
+					}
+
+				};
+
+				//Check for buttons released to stop movement
+				var onKeyUp = function ( event ) {
+
+					switch( event.keyCode ) {
+
+						case 38: // up
+						case 87: // w
+							moveForward = false;
+							break;
+
+						case 37: // left
+						case 65: // a
+							moveLeft = false;
+							break;
+
+						case 40: // down
+						case 83: // s
+							moveBackward = false;
+							break;
+
+						case 39: // right
+						case 68: // d
+							moveRight = false;
+							break;
+						case 69: // e
+							pickup = false;
+							break;
+						case 16: //shift
+							run = false;
+							break;
+
+					}
+
+				};
+
+				document.addEventListener( 'keydown', onKeyDown, false );
+				document.addEventListener( 'keyup', onKeyUp, false );
+
+				raycaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 15 );
+				collisionRaycaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 5 );
+				
+				fCollisionCaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 5 );
+				bCollisionCaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 5 );
+				lCollisionCaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 5 );
+				rCollisionCaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 5 );
+
+				//*********************
+				//		FLOOR
+				//*********************
+				var floorTexture = new THREE.ImageUtils.loadTexture( 'textures/cobble.jpg' );
+				floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping; 
+				floorTexture.repeat.set( 50, 50 );
+				var floorMaterial = new THREE.MeshBasicMaterial( { map: floorTexture, side: THREE.DoubleSide } );
+				var floorGeometry = new THREE.PlaneGeometry(500, 500, 10, 10);
+				var floor = new THREE.Mesh(floorGeometry, floorMaterial);
+				floor.position.y = -0.5;
+				floor.rotation.x = Math.PI / 2;
+				scene.add(floor);
+
+				///////////////////////////
+				// CEILING
+				///////////////////////////
+				var top = floor.clone();
+				top.position.y = 70;
+				scene.add(top);
+
+				/////////////////////////////
+				// OBJECTS
+				/////////////////////////////
+				
+
+				////////////
+				// ADD OUTSIDE WALLS
+				////////////
+				var wallGeom = new THREE.CubeGeometry(20,75,500);
+				var wallTexture = new THREE.ImageUtils.loadTexture( 'textures/cobble.jpg' );
+				wallTexture.wrapS = wallTexture.wrapT = THREE.RepeatWrapping; 
+				wallTexture.repeat.set( 50, 15 );
+				var wallMaterial = new THREE.MeshBasicMaterial( { map: wallTexture, side: THREE.DoubleSide } );
+
+				var wall = new THREE.Mesh(wallGeom, wallMaterial);
+				
+				var wall1 = wall.clone();
+				var wall2 = wall.clone();
+				var wall3 = wall.clone();
+				var wall4 = wall.clone();
+		
+				wall1.position.x = 250;
+				wall1.position.y = 32;
+				
+				wall2.position.x = -250;
+				wall2.position.y = 32;
+				
+				wall3.rotation.y = 90 * Math.PI/180;
+				wall3.position.z = 250;
+				wall3.position.y = 32;
+				
+				wall4.rotation.y = 90 * Math.PI/180;
+				wall4.position.z = -250;
+				wall4.position.y = 32;
+				
+				scene.add(wall1);
+				scene.add(wall2);
+				scene.add(wall3);
+				scene.add(wall4);
+				
+				objects.push(wall1);
+				objects.push(wall2);
+				objects.push(wall3);
+				objects.push(wall4);
+
+				///////////////////
+				// BUILD ROOMS
+				///////////////////
+				var longGeom = new THREE.CubeGeometry(10,75,225);
+				var mediumGeom = new THREE.CubeGeometry(10,75,125);
+				var shortGeom = new THREE.CubeGeometry(10,75,60);
+
+				var longTexture = new THREE.ImageUtils.loadTexture( 'textures/cobble.jpg' );
+				longTexture.wrapS = longTexture.wrapT = THREE.RepeatWrapping; 
+				longTexture.repeat.set( 20, 20 );
+
+				var mediumTexture = new THREE.ImageUtils.loadTexture( 'textures/cobble.jpg' );
+				mediumTexture.wrapS = mediumTexture.wrapT = THREE.RepeatWrapping; 
+				mediumTexture.repeat.set( 10, 20 );
+
+				var shortTexture = new THREE.ImageUtils.loadTexture( 'textures/cobble.jpg' );
+				shortTexture.wrapS = shortTexture.wrapT = THREE.RepeatWrapping; 
+				shortTexture.repeat.set( 5, 20 );
+
+				var longMaterial = new THREE.MeshBasicMaterial( { map: longTexture, side: THREE.DoubleSide } );
+				var mediumMaterial = new THREE.MeshBasicMaterial( { map: mediumTexture, side: THREE.DoubleSide } );
+				var shortMaterial = new THREE.MeshBasicMaterial( { map: shortTexture, side: THREE.DoubleSide } );
+
+				var longWall = new THREE.Mesh(longGeom, longMaterial);
+				var mediumWall = new THREE.Mesh(mediumGeom, mediumMaterial);
+				var shortWall = new THREE.Mesh(shortGeom, shortMaterial);
+
+				var long1 = longWall.clone();
+				var long2 = longWall.clone();
+				var long3 = longWall.clone();
+				var long4 = longWall.clone();
+
+				mediumWall.rotation.y = 90 * Math.PI/180;
+				var med1 = mediumWall.clone();
+				var med2 = mediumWall.clone();
+				var med3 = mediumWall.clone();
+				var med4 = mediumWall.clone();
+
+				shortWall.rotation.y = 90 * Math.PI/180; 
+				var short1 = shortWall.clone();
+				var short2 = shortWall.clone();
+				var short3 = shortWall.clone();
+				var short4 = shortWall.clone();
+
+				long1.position.set( 25, 32,  (225/2)+25);
+				long2.position.set(-25, 32,  (225/2)+25);
+				long3.position.set( 25, 32, -(225/2)-25);
+				long4.position.set(-25, 32, -(225/2)-25);
+
+				med1.position.set( 180, 32, 20);
+				med2.position.set( -180, 32, 20);
+				med3.position.set( 180, 32, -20);
+				med4.position.set( -180, 32, -20);
+
+				short1.position.set( 50, 32,  20);
+				short2.position.set(-50, 32,  20);
+				short3.position.set( 50, 32, -20);
+				short4.position.set(-50, 32, -20);
+
+				scene.add(long1);
+				scene.add(long2);
+				scene.add(long3);
+				scene.add(long4);
+
+				scene.add(med1);
+				scene.add(med2);
+				scene.add(med3);
+				scene.add(med4);
+
+				scene.add(short1);
+				scene.add(short2);
+				scene.add(short3);
+				scene.add(short4);
+
+				objects.push(long1);
+				objects.push(long2);
+				objects.push(long3);
+				objects.push(long4);
+
+				objects.push(med1);
+				objects.push(med2);
+				objects.push(med3);
+				objects.push(med4);
+
+				objects.push(short1);
+				objects.push(short2);
+				objects.push(short3);
+				objects.push(short4);
+
+
+
+
+				////////////
+				// TEST OBJECTS
+				////////////
+				var cubeGeom = new THREE.CubeGeometry(30,30,30);
+				var cubeMaterial = new THREE.MeshLambertMaterial();
+				var cube = new THREE.Mesh(cubeGeom, cubeMaterial);
+				cube.position.set(50,0,50);
+				scene.add(cube);
+				objects.push(cube);
+				interactiveObj.push(cube);
+				
+				var cube2Geom = new THREE.CubeGeometry(30,30,30);
+				var cube2Material = new THREE.MeshLambertMaterial();
+				var cube2 = new THREE.Mesh(cube2Geom, cube2Material);
+				cube2.position.set(-100,0,-100);
+				scene.add(cube2);
+				objects.push(cube2);
+				interactiveObj.push(cube2);
+
+				//
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setClearColor( 0xffffff );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				document.body.appendChild( renderer.domElement );
+
+				//Set up picking
+				projector = new THREE.Projector();
+				mouse = new THREE.Vector3();
+				window.addEventListener( 'mousemove', onMouseMove, false );
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+			}
+
+			//Picking function
+			function onMouseMove( e ) {
+				//Reset color of all objects
+				for ( var i = 0; i < interactiveObj.length; i ++ ) {
+					interactiveObj[i].material.color.setRGB(1,0,0 );
+					highlighted = false;
+				}
+
+				event.preventDefault();
+
+				mouse.x = ( event.clientX / renderer.domElement.clientWidth ) * 2 - 1;
+				mouse.y = - ( event.clientY / renderer.domElement.clientHeight ) * 2 + 1;
+
+				raycaster.setFromCamera( mouse, camera );
+
+				var intersects = raycaster.intersectObjects( interactiveObj );
+
+				if ( intersects.length > 0 ) {
+
+					intersects[0].object.material.color.setHex(1,1,1);
+
+					highlighted = true;
+
+					selectedObj = intersects[0];
+
+				}
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function animate() {
+
+				//Check for interactive object pickup
+				if (highlighted && pickup) {
+					backpack.push(selectedObj.object);
+
+					//Remove from scene
+					scene.remove(selectedObj.object);
+					
+					//Remove from collision list;
+					var index = objects.indexOf(selectedObj.object);
+					if (index > -1) {
+   						objects.splice(index, 1);
+					}
+
+					//Remove from interactive list
+					index = interactiveObj.indexOf(selectedObj.object);
+					if (index > -1) {
+   						interactiveObj.splice(index, 1);
+					}					
+
+					console.log('Picked up the object');
+				}
+
+				requestAnimationFrame( animate );
+
+				if ( controlsEnabled ) {
+					collisionRaycaster.ray.origin.copy( controls.getObject().position );
+					collisionRaycaster.ray.origin.y -= 10;
+
+					var intersections = collisionRaycaster.intersectObjects( objects );
+
+					var isOnObject = intersections.length > 0;
+
+					// forward collision
+					fCollisionCaster.setFromCamera( mouse, camera );
+					var fCollisions = fCollisionCaster.intersectObjects( objects );
+					var fcollision = fCollisions.length > 0;
+					
+					//backward collision
+					collisionRaycaster.ray.origin.copy( controls.getObject().position );
+					var bCollisions = collisionRaycaster.intersectObjects( objects );
+					var bcollision = bCollisions.length > 0;
+
+					var time = performance.now();
+					var delta = ( time - prevTime ) / 1000;
+
+					var runningScale;
+					
+					//Adjust running speed accordingly
+					if (run)
+						runningScale = 0.5;
+					else
+						runningScale = 1;
+
+					velocity.x -= velocity.x * 10.0 * delta * runningScale;
+					velocity.z -= velocity.z * 10.0 * delta * runningScale;
+
+					velocity.y -= 9.0 * 200.0 * delta; // 100.0 = mass
+
+					if ( moveForward ) velocity.z -= 400.0 * delta;
+					if ( moveBackward ) velocity.z += 400.0 * delta;
+
+					if ( moveLeft ) velocity.x -= 400.0 * delta;
+					if ( moveRight ) velocity.x += 400.0 * delta;
+
+					if ( isOnObject === true ) {
+						velocity.y = Math.max( 0, velocity.y );
+
+						canJump = true;
+					}
+
+
+					//z movement
+					if (fcollision === true && moveForward) {
+						velocity.z = Math.max( 0, velocity.z );
+						//velocity.z = 0;
+					}
+					if (fcollision === true && moveBackward) {
+						velocity.z = 0;
+					}
+
+
+					controls.getObject().translateX( velocity.x * delta );
+					controls.getObject().translateY( velocity.y * delta );
+					controls.getObject().translateZ( velocity.z * delta );
+
+					if ( controls.getObject().position.y < 10 ) {
+
+						velocity.y = 0;
+						controls.getObject().position.y = 10;
+
+						canJump = true;
+
+					}
+
+					prevTime = time;
+
+				}
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+	</body>
+</html>
