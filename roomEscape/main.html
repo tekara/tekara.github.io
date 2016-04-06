@@ -584,9 +584,9 @@
 
 					// left collision
 					lCollisionCaster.setFromCamera( mouse, camera );
-					//var ldir = new THREE.Vector3(1,0,0);
+					var ldir = new THREE.Vector3(1,0,0);
 					//var ldir = lCollisionCaster.direction;
-					lCollisionCaster.direction.x *= -1;
+					//lCollisionCaster.direction *= -1;
 					var lCollisions = lCollisionCaster.intersectObjects( objects );
 					var lcollision = lCollisions.length > 0;
 
