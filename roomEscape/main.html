@@ -296,10 +296,10 @@
 				raycaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 15 );
 				collisionRaycaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 5 );
 				
-				fCollisionCaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 5 );
-				bCollisionCaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 5 );
-				lCollisionCaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 5 );
-				rCollisionCaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 5 );
+				fCollisionCaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 7 );
+				bCollisionCaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 7 );
+				lCollisionCaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 7 );
+				rCollisionCaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), 0, 7 );
 
 				//*********************
 				//		FLOOR
@@ -567,13 +567,35 @@
 
 					// forward collision
 					fCollisionCaster.setFromCamera( mouse, camera );
+					//var fdir = new THREE.Vector3(0,-1,0);
+					//dir = bCollisionCaster.direction;
+					//bCollisionCaster.direction = fdir;
 					var fCollisions = fCollisionCaster.intersectObjects( objects );
 					var fcollision = fCollisions.length > 0;
 					
 					//backward collision
-					collisionRaycaster.ray.origin.copy( controls.getObject().position );
-					var bCollisions = collisionRaycaster.intersectObjects( objects );
-					var bcollision = bCollisions.length > 0;
+					/*bCollisionCaster.setFromCamera( mouse, camera );
+					var dir = new THREE.Vector3(0,1,0);
+					//dir = bCollisionCaster.direction;
+					bCollisionCaster.direction = dir;
+					bCollisionCaster.far = 5;
+					var bCollisions = bCollisionCaster.intersectObjects( objects );
+					var bcollision = bCollisions.length > 0;*/
+
+					// left collision
+					lCollisionCaster.setFromCamera( mouse, camera );
+					//var ldir = new THREE.Vector3(1,0,0);
+					//var ldir = lCollisionCaster.direction;
+					lCollisionCaster.direction.x *= -1;
+					var lCollisions = lCollisionCaster.intersectObjects( objects );
+					var lcollision = lCollisions.length > 0;
+
+					// right collision
+					rCollisionCaster.setFromCamera( mouse, camera );
+					var rdir = new THREE.Vector3(0,0,1);
+					rCollisionCaster.direction = rdir;
+					var rCollisions = rCollisionCaster.intersectObjects( objects );
+					var rcollision = rCollisions.length > 0;
 
 					var time = performance.now();
 					var delta = ( time - prevTime ) / 1000;
@@ -609,9 +631,13 @@
 						velocity.z = Math.max( 0, velocity.z );
 						//velocity.z = 0;
 					}
-					if (fcollision === true && moveBackward) {
+					/*if (bcollision === true && moveBackward) {
 						velocity.z = 0;
-					}
+					}*/
+					if (lcollision === true && moveLeft)
+						velocity.x = 0;
+					if (rcollision === true && moveRight)
+						velocity.x = 0;
 
 
 					controls.getObject().translateX( velocity.x * delta );
